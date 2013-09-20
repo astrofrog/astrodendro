@@ -8,7 +8,7 @@ Interactive Visualization
 -------------------------
 
 One you have computed your dendrogram, the easiest way to view it interactively
-is to use the ``viewer()`` method::
+is to use the :meth:`~astrodendro.dendrogram.Dendrogram.viewer` method::
 
     d = Dendrogram.compute(...)
     d.viewer()
@@ -46,15 +46,18 @@ Making plots for publications
 
 While the viewer is useful for exploring the dendrogram, it does not allow one
 to produce publication-quality plots. For this, you can use the non-interactive
-plotting interface. To do this, you can first use the ``plotter()`` method to
-provide a plotting tool::
+plotting interface. To do this, you can first use the
+:meth:`~astrodendro.dendrogram.Dendrogram.plotter` method to provide a plotting
+tool::
 
     d = Dendrogram.compute(...)
     p = d.plotter()
 
 and then use this to make the plot you need. The following complete example
-shows how to make a plot of the dendrogram of an extinction map of the Perseus
-region, highlighting two of the main branches:
+shows how to make a plot of the dendrogram of the extinction map of the Perseus
+region (introduced in :doc:using) using the
+:meth:`~astrodendro.plot.DendrogramPlotter.plot_tree`, highlighting two of the
+main branches:
 
 .. plot::
    :include-source:
@@ -85,9 +88,11 @@ You can find out the structure ID you need either from the interactive viewer
 presented above, or programmatically by accessing the ``idx`` attribute of a
 Structure.
 
-A ``plot_contour`` method is also provided to outline the contours of
-structures. Calling ``plot_contour`` without any arguments results in a contour
-corresponding to the value of ``min_value`` used being shown.
+A :meth:`~astrodendro.plot.DendrogramPlotter.plot_contour` method is also
+provided to outline the contours of structures. Calling
+:meth:`~astrodendro.plot.DendrogramPlotter.plot_contour` without any arguments
+results in a contour corresponding to the value of ``min_value`` used being
+shown.
 
 .. plot::
    :include-source:
@@ -111,4 +116,87 @@ corresponding to the value of ``min_value`` used being shown.
     p.plot_contour(ax, structure=2077, lw=3, colors='red')
     p.plot_contour(ax, structure=3262, lw=3, colors='orange')
 
+Plotting contours of structures in third-party packages
+-------------------------------------------------------
 
+In some cases you may want to plot the contours in third party packages such as
+`APLpy <http://aplpy.github.com>`_ or `DS9
+<http://hea-www.harvard.edu/RD/ds9/site/Home.html>`_. For these cases, the best
+approach is to output FITS files with a mask of the structures to plot (one
+mask file per contour color you want to show).
+
+Let's first take the plot above and make a contour plot in APLpy outlining all the leaves. We can use the :meth:`~astrodendro.structure.Structure.get_mask` method to retrieve the footprint of a given structure:
+
+.. plot::
+   :include-source:
+
+    import aplpy
+    import numpy as np
+    import matplotlib.pyplot as plt
+    from astropy.io import fits
+    from astrodendro import Dendrogram
+
+    hdu = fits.open('PerA_Extn2MASS_F_Gal.fits')[0]
+    d = Dendrogram.compute(hdu.data, min_value=2.0, min_delta=1., min_npix=10)
+
+    # Create empty mask. For each leaf we do an 'or' operation with the mask so
+    # that any pixel corresponding to a leaf is set to True.
+    mask = np.zeros(hdu.data.shape, dtype=bool)
+    for leaf in d.leaves:
+        mask = mask | leaf.get_mask(mask.shape)
+
+    # Now we create a FITS HDU object to contain this, with the correct header
+    mask_hdu = fits.PrimaryHDU(mask.astype(int), hdu.header)
+
+    # We then use APLpy to make the final plot
+    fig = aplpy.FITSFigure(hdu, figsize=(8, 6))
+    fig.show_colorscale(cmap='Blues', vmax=4.0)
+    fig.show_contour(mask_hdu, colors='red', linewidths=0.5)
+    fig.tick_labels.set_xformat('dd')
+    fig.tick_labels.set_yformat('dd')
+
+Now let's take the example from `Making plots for publications`_ and try and
+reproduce the same plot. As described there, one way to find interesting
+structures in the dendrogram is to use the `Interactive Visualization`_ tool.
+This tool will give the ID of a structure as an integer (which we call ``idx``).
+
+Because we are starting from this ID rather than a
+:class:`~astrodendro.structure.Structure` object, we need to first get the
+structure, which can be done with::
+
+    structure = d[idx]
+
+where ``d`` is a :class:`~astrodendro.dendrogram.Dendrogram` instance. We also
+want to create a different mask for each contour so as to have complete control
+over the colors:
+
+.. plot::
+   :include-source:
+
+    import aplpy
+    from astropy.io import fits
+    from astrodendro import Dendrogram
+
+    hdu = fits.open('PerA_Extn2MASS_F_Gal.fits')[0]
+    d = Dendrogram.compute(hdu.data, min_value=2.0, min_delta=1., min_npix=10)
+
+    # Find the structures
+    structure_2077 = d[2077]
+    structure_3262 = d[3262]
+
+    # Extract the masks
+    mask_2077 = structure_2077.get_mask(hdu.data.shape)
+    mask_3262 = structure_3262.get_mask(hdu.data.shape)
+
+    # Create FITS HDU objects to contain the masks
+    mask_hdu_2077 = fits.PrimaryHDU(mask_2077.astype(int), hdu.header)
+    mask_hdu_3262 = fits.PrimaryHDU(mask_3262.astype(int), hdu.header)
+
+    # Use APLpy to make the final plot
+    fig = aplpy.FITSFigure(hdu, figsize=(8, 6))
+    fig.show_colorscale(cmap='Blues', vmax=4.0)
+    fig.show_contour(hdu, levels=[2.0], colors='black', linewidths=0.5)
+    fig.show_contour(mask_hdu_2077, colors='red', linewidths=0.5)
+    fig.show_contour(mask_hdu_3262, colors='orange', linewidths=0.5)
+    fig.tick_labels.set_xformat('dd')
+    fig.tick_labels.set_yformat('dd')

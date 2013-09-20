@@ -2,10 +2,7 @@
 
 from setuptools import setup, Command
 
-try:  # Python 3.x
-    from distutils.command.build_py import build_py_2to3 as build_py
-except ImportError:  # Python 2.x
-    from distutils.command.build_py import build_py
+from distutils.command.build_py import build_py
 
 
 class DendroTest(Command):
@@ -47,10 +44,10 @@ class DendroTest(Command):
 setup(name='dendro-core',
       version='0.0.1',
       description='Python package for computation of astronomical dendrograms',
-      author='Braden MacDonald and Thomas Robitaille',
+      author='Thomas Robitaille, Chris Beaumont, Braden MacDonald, and Erik Rosolowsky',
       author_email='braden@bradenmacdonald.com',
       packages=['astrodendro', 'astrodendro.io', 'astrodendro.test'],
-      package_data={'astrodendro.test':['*.npz']},
+      package_data={'astrodendro.test':['*.npz', 'benchmark_data/*fits']},
       provides=['astrodendro'],
       requires=['numpy'],
       cmdclass={'build_py': build_py, 'test': DendroTest},

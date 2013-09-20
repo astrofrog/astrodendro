@@ -1,23 +1,4 @@
-# Computing Astronomical Dendrograms
-# Copyright (c) 2011-2012 Thomas P. Robitaille and Braden MacDonald
-#
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in
-# all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-# DEALINGS IN THE SOFTWARE.
+# Licensed under an MIT open source license - see LICENSE
 
 import sys
 
@@ -57,20 +38,20 @@ class TestRecursionLimit(object):
     def test_computing_level(self):
         d = Dendrogram.compute(self.data)
 
-        # Now pick a node near the middle of the dendrogram:
-        mid_node = d.node_at((0, self.size // 2))
+        # Now pick a structure near the middle of the dendrogram:
+        mid_structure = d.structure_at((0, self.size // 2))
 
         # Compute its level:
         sys.setrecursionlimit(100000)
-        _ = mid_node.level
+        _ = mid_structure.level
 
         # Check that .level satisfies the recurrence relation:
         # 0 if root else parent.level + 1
-        for node in d.all_nodes:
-            if node.parent is None:
-                assert node.level == 0
+        for structure in d.all_structures:
+            if structure.parent is None:
+                assert structure.level == 0
             else:
-                assert node.level == node.parent.level + 1
+                assert structure.level == structure.parent.level + 1
 
     def teardown_method(self, method):
         sys.setrecursionlimit(self._oldlimit)

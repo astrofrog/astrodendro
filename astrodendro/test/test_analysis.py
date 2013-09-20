@@ -1,3 +1,5 @@
+# Licensed under an MIT open source license - see LICENSE
+
 import pytest
 from mock import patch
 
@@ -9,16 +11,24 @@ from astropy.wcs import WCS
 
 from ._testdata import data
 from ..analysis import (ScalarStatistic, PPVStatistic, ppv_catalog,
-                        _missing_metadata, MetaData, _warn_missing_metadata,
-                        PPStatistic, pp_catalog)
+                        Metadata, PPStatistic, pp_catalog)
 from .. import Dendrogram
+from ..structure import Structure
 
 
-wcs_2d = WCS(header=dict(cdelt1=1, crval1=0, crpix1=0,
-                         cdelt2=2, crval2=0, crpix2=0))
-wcs_3d = WCS(header=dict(cdelt1=1, crval1=0, crpix1=0,
-                         cdelt2=2, crval2=0, crpix2=0,
-                         cdelt3=3, crval3=0, crpix3=0))
+def assert_allclose_quantity(a, b):
+    if not isinstance(a, u.Quantity):
+        raise TypeError("a is not a quantity")
+    if not isinstance(b, u.Quantity):
+        raise TypeError("b is not a quantity")
+    assert_allclose(a.value, b.value)
+    assert a.unit == b.unit
+
+wcs_2d = WCS(header=dict(cdelt1=1, crval1=0, crpix1=1,
+                         cdelt2=2, crval2=0, crpix2=1))
+wcs_3d = WCS(header=dict(cdelt1=1, crval1=0, crpix1=1,
+                         cdelt2=2, crval2=0, crpix2=1,
+                         cdelt3=3, crval3=0, crpix3=1))
 
 def benchmark_stat():
     x = np.array([216, 216, 216, 216, 216, 217, 216,
@@ -87,7 +97,7 @@ class TestScalarStatistic(object):
         stat = self.stat
         assert_allclose(stat.count(), 21)
 
-    def test_paxes(self):
+    def test_sky_paxes(self):
         stat = self.stat
         v1, v2, v3 = stat.paxes()
         v = benchmark_values()
@@ -145,7 +155,7 @@ class TestScalar2D(object):
     def test_count(self):
         assert_allclose(self.stat.count(), 6)
 
-    def test_paxes(self):
+    def test_sky_paxes(self):
         v1, v2 = self.stat.paxes()
         v1ex = [0.7015083489012299, 0.7126612353859795]
         v2ex = [0.7126612353859795, -0.7015083489012299]
@@ -176,70 +186,52 @@ class TestPPVStatistic(object):
         self.v = benchmark_values()
 
     def metadata(self, **kwargs):
-        result = dict(distance=1,
-                      dx=1,
-                      dv=1,
-                      vaxis=0,
-                      bunit=1,
-                      wcs=wcs_3d,
-                      wcs_origin=1,
-                      )
+        result = dict(data_unit=u.Jy, wcs=wcs_3d)
         result.update(**kwargs)
         return result
 
-    def test_flux(self):
+    def test_x_cen(self):
+
         p = PPVStatistic(self.stat, self.metadata())
-        assert_allclose(p.flux(), self.v['mom0'])
-
-        p = PPVStatistic(self.stat, self.metadata(dx=5))
-        assert_allclose(p.flux(), self.v['mom0'] * 25)
-
-        p = PPVStatistic(self.stat, self.metadata(dv=3))
-        assert_allclose(p.flux(), self.v['mom0'] * 3)
-
-    def test_xcen(self):
-        p = PPVStatistic(self.stat, self.metadata())
-        assert_allclose(p.xcen(), self.v['mom1'][2])
+        assert_allclose(p.x_cen, self.v['mom1'][2])
 
         p = PPVStatistic(self.stat, self.metadata(vaxis=2))
-        assert_allclose(p.xcen(), self.v['mom1'][1] * 2)
+        assert_allclose(p.x_cen, self.v['mom1'][1] * 2)
 
-    def test_ycen(self):
+    def test_y_cen(self):
         p = PPVStatistic(self.stat, self.metadata())
-        assert_allclose(p.ycen(), self.v['mom1'][1] * 2)
+        assert_allclose(p.y_cen, self.v['mom1'][1] * 2)
 
         p = PPVStatistic(self.stat, self.metadata(vaxis=2))
-        assert_allclose(p.ycen(), self.v['mom1'][0] * 3)
+        assert_allclose(p.y_cen, self.v['mom1'][0] * 3)
 
-    def test_vcen(self):
+    def test_v_cen(self):
         p = PPVStatistic(self.stat, self.metadata())
-        assert_allclose(p.vcen(), self.v['mom1'][0] * 3)
+        assert_allclose(p.v_cen, self.v['mom1'][0] * 3)
 
         p = PPVStatistic(self.stat, self.metadata(vaxis=2))
-        assert_allclose(p.vcen(), self.v['mom1'][2])
+        assert_allclose(p.v_cen, self.v['mom1'][2])
 
-    def test_sky_maj(self):
-        p = PPVStatistic(self.stat, self.metadata(dx=2))
+    def test_major_sigma(self):
+        p = PPVStatistic(self.stat, self.metadata(spatial_scale=2 * u.arcsec))
+        assert_allclose_quantity(p.major_sigma, self.v['sig_maj'] * 2 * u.arcsec)
 
-        assert_allclose(p.sky_maj(), self.v['sig_maj'] * 2)
+    def test_minor_sigma(self):
+        p = PPVStatistic(self.stat, self.metadata(spatial_scale=4 * u.arcsec))
+        assert_allclose_quantity(p.minor_sigma, self.v['sig_min'] * 4 * u.arcsec)
 
-    def test_sky_min(self):
-        p = PPVStatistic(self.stat, self.metadata(dx=4))
-        assert_allclose(p.sky_min(), self.v['sig_min'] * 4)
+    def test_radius(self):
+        p = PPVStatistic(self.stat, self.metadata(spatial_scale=4 * u.arcsec))
+        assert_allclose_quantity(p.radius, np.sqrt(self.v['sig_min'] * self.v['sig_maj']) * 4 * u.arcsec)
 
-    def test_sky_radius(self):
-        p = PPVStatistic(self.stat, self.metadata(dx=4))
-        assert_allclose(p.sky_radius(), np.sqrt(self.v['sig_min'] *
-                                                self.v['sig_maj']) * 4)
-
-    def test_sky_vrms(self):
+    def test_v_rms(self):
         p = PPVStatistic(self.stat, self.metadata())
-        assert_allclose(p.vrms(), np.sqrt(self.v['mom2_100']))
+        assert_allclose_quantity(p.v_rms, np.sqrt(self.v['mom2_100']) * u.pixel)
 
-        p = PPVStatistic(self.stat, self.metadata(vaxis=1, dv=10))
-        assert_allclose(p.vrms(), np.sqrt(self.v['mom2_010']) * 10)
+        p = PPVStatistic(self.stat, self.metadata(vaxis=1, velocity_scale=10 * u.km / u.s))
+        assert_allclose_quantity(p.v_rms, np.sqrt(self.v['mom2_010']) * 10 * u.km / u.s)
 
-    def test_pa(self):
+    def test_position_angle(self):
         x = np.array([0, 1, 2])
         y = np.array([1, 1, 1])
         z = np.array([0, 1, 2])
@@ -248,40 +240,22 @@ class TestPPVStatistic(object):
         ind = (z, y, x)
         stat = ScalarStatistic(v, ind)
         p = PPVStatistic(stat, self.metadata())
-        assert_allclose(p.sky_pa(), 0)
+        assert_allclose_quantity(p.position_angle, 0 * u.degree)
 
         ind = (z, x, y)
         stat = ScalarStatistic(v, ind)
         p = PPVStatistic(stat, self.metadata())
-        assert_allclose(p.sky_pa(), 90)
-
-    def test_deconvolved_rad(self):
-        p = PPVStatistic(self.stat, self.metadata(bmaj=.4, bmin=.1))
-
-        a = self.v['sig_maj']
-        b = self.v['sig_min']
-        dcr = np.sqrt(np.sqrt(a ** 2 - .04) * np.sqrt(b ** 2 - .04))
-        assert_allclose(p.sky_deconvolved_rad(), dcr)
-
-    def test_luminosity(self):
-        p = PPVStatistic(self.stat, self.metadata(dist=10))
-        v = benchmark_values()
-        assert_allclose(p.luminosity(), v['mom0'] * 100 * np.radians(1) ** 2)
-
-        p = PPVStatistic(self.stat, self.metadata(dist=10, dx=1 * u.rad))
-        assert_allclose(p.luminosity(), v['mom0'] * 100)
+        assert_allclose_quantity(p.position_angle, 90 * u.degree)
 
     def test_units(self):
-        m = self.metadata(dx=1 * u.deg, dv=1 * u.km / u.s,
-                          bunit=1 * u.K, dist=1 * u.pc)
+        m = self.metadata(spatial_scale=1 * u.deg, velocity_scale=1 * u.km / u.s,
+                          data_unit=1 * u.K, distance=1 * u.pc)
         p = PPVStatistic(self.stat, m)
 
-        assert p.vrms().unit == u.km / u.s
-        assert p.flux().unit == u.deg ** 2 * u.km / u.s * u.K
-        assert p.sky_maj().unit == u.deg
-        assert p.sky_min().unit == u.deg
-        assert p.sky_radius().unit == u.deg
-        assert p.luminosity().unit == u.km / u.s * u.K * u.pc ** 2
+        assert p.v_rms.unit == u.km / u.s
+        assert p.major_sigma.unit == u.deg
+        assert p.minor_sigma.unit == u.deg
+        assert p.radius.unit == u.deg
 
 
 class TestPPStatistic(object):
@@ -293,31 +267,24 @@ class TestPPStatistic(object):
         self.v = benchmark_values()
 
     def metadata(self, **kwargs):
-        result = dict(distance=1,
-                      dx=1,
-                      )
+        result = dict()
         result.update(**kwargs)
         return result
 
-    def test_flux(self):
-        p = PPStatistic(self.stat, self.metadata(dx=5))
-        assert_allclose(p.flux(), self.v['mom0'] * 25)
+    def test_major_sigma(self):
+        p = PPStatistic(self.stat, self.metadata(spatial_scale=2 * u.arcsec))
 
-    def test_sky_maj(self):
-        p = PPStatistic(self.stat, self.metadata(dx=2))
+        assert_allclose_quantity(p.major_sigma, self.v['sig_maj'] * 2 * u.arcsec)
 
-        assert_allclose(p.sky_maj(), self.v['sig_maj'] * 2)
+    def test_minor_sigma(self):
+        p = PPStatistic(self.stat, self.metadata(spatial_scale=4 * u.arcsec))
+        assert_allclose_quantity(p.minor_sigma, self.v['sig_min'] * 4 * u.arcsec)
 
-    def test_sky_min(self):
-        p = PPStatistic(self.stat, self.metadata(dx=4))
-        assert_allclose(p.sky_min(), self.v['sig_min'] * 4)
+    def test_radius(self):
+        p = PPStatistic(self.stat, self.metadata(spatial_scale=4 * u.arcsec))
+        assert_allclose_quantity(p.radius, np.sqrt(self.v['sig_min'] * self.v['sig_maj']) * 4 * u.arcsec)
 
-    def test_sky_radius(self):
-        p = PPStatistic(self.stat, self.metadata(dx=4))
-        assert_allclose(p.sky_radius(), np.sqrt(self.v['sig_min'] *
-                                                self.v['sig_maj']) * 4)
-
-    def test_pa(self):
+    def test_position_angle(self):
         x = np.array([0, 1, 2])
         y = np.array([1, 1, 1])
         v = np.array([1, 1, 1])
@@ -325,12 +292,31 @@ class TestPPStatistic(object):
         ind = (y, x)
         stat = ScalarStatistic(v, ind)
         p = PPStatistic(stat, self.metadata())
-        assert_allclose(p.sky_pa(), 0)
+        assert_allclose_quantity(p.position_angle, 0 * u.degree)
 
         ind = (x, y)
         stat = ScalarStatistic(v, ind)
         p = PPStatistic(stat, self.metadata())
-        assert_allclose(p.sky_pa(), 90)
+        assert_allclose_quantity(p.position_angle, 90 * u.degree)
+
+
+def test_statistic_dimensionality():
+
+    d = Dendrogram.compute(np.ones((10,10)))
+
+    with pytest.raises(ValueError) as exc:
+        PPVStatistic(d.trunk[0])
+    assert exc.value.args[0] == "PPVStatistic can only be used on 3-d datasets"
+
+    PPStatistic(d.trunk[0])
+
+    d = Dendrogram.compute(np.ones((10,10,10)))
+
+    with pytest.raises(ValueError) as exc:
+        PPStatistic(d.trunk[0])
+    assert exc.value.args[0] == "PPStatistic can only be used on 2-d datasets"
+
+    PPVStatistic(d.trunk[0])
 
 
 class TestCataloger(object):
@@ -345,8 +331,9 @@ class TestCataloger(object):
 
     def make_catalog(self, s=None, md=None, fields=None):
         s = s or [self.stat()]
+        structures = [Structure(zip(*x.indices), x.values) for x in s]
         md = md or self.metadata()
-        return self.cataloger(s, md, fields)
+        return self.cataloger(structures, md, fields)
 
     def test_benchmark(self):
         c = self.make_catalog()
@@ -359,30 +346,27 @@ class TestCataloger(object):
     def test_field_selection(self):
         stat = self.stat()
         md = self.metadata()
-        c = ppv_catalog([stat], md, fields=['flux'])
-        assert c.dtype.names == ('flux',)
+        c = self.cataloger([Structure(zip(*stat.indices), stat.values)], md, fields=['x_cen'])
+        assert c.dtype.names == ('_idx', 'x_cen',)
 
 
 class TestPPVCataloger(TestCataloger):
-    fields = ['flux', 'luminosity',
-              'sky_maj', 'sky_min', 'sky_radius',
-              'vrms', 'sky_deconvolved_rad',
-              'sky_pa', 'xcen', 'ycen', 'vcen']
+    fields = ['_idx', 'flux',
+              'major_sigma', 'minor_sigma', 'radius',
+              'v_rms', 'position_angle', 'x_cen', 'y_cen', 'v_cen']
     cataloger = staticmethod(ppv_catalog)
 
     def stat(self):
         return benchmark_stat()
 
     def metadata(self):
-        return dict(vaxis=1, dx=1, dv=1, dist=1, lum2mass=1,
-                    bmaj=1, bmin=1, bunit=1, wcs=wcs_3d)
+        return dict(vaxis=1, data_unit=u.Jy, wcs=wcs_3d)
 
 
 class TestPPCataloger(TestCataloger):
-    fields = ['flux', 'luminosity',
-              'sky_maj', 'sky_min', 'sky_radius',
-              'sky_deconvolved_rad',
-              'sky_pa', 'xcen', 'ycen']
+    fields = ['_idx', 'flux',
+              'major_sigma', 'minor_sigma', 'radius',
+              'position_angle', 'x_cen', 'y_cen']
     cataloger = staticmethod(pp_catalog)
 
     def stat(self):
@@ -391,29 +375,18 @@ class TestPPCataloger(TestCataloger):
         return bs
 
     def metadata(self):
-        return dict(dx=1, dist=1, lum2mass=1,
-                    bmaj=1, bmin=1, bunit=1, wcs=wcs_2d)
+        return dict(data_unit=u.Jy, wcs=wcs_2d)
 
 
 #don't let pytest test abstract class
 del TestCataloger
 
 
-def test_find_missing_ppv_metadata():
-    md = dict(dx=1, dv=1, vaxis=1, bmaj=1, bmin=1, bunit=1, dist=1,
-              wcs=wcs_3d, wcs_origin=0)
-    assert len(_missing_metadata(PPVStatistic, md)) == 0
-
-    md.pop('dx')
-    assert _missing_metadata(PPVStatistic, md)[0].key == 'dx'
-    assert len(_missing_metadata(PPVStatistic, {})) == 9
-
-
 def test_metadata_protocol():
     class Foo(object):
-        x = MetaData('x', 'test')
-        y = MetaData('y', 'test', default=5)
-        z = MetaData('z', 'test', strict=True)
+        x = Metadata('x', 'test')
+        y = Metadata('y', 'test', default=5)
+        z = Metadata('z', 'test', strict=True)
 
         def __init__(self, md):
             self.metadata = md
@@ -423,42 +396,3 @@ def test_metadata_protocol():
     assert f.y == 5
     with pytest.raises(KeyError):
         f.z
-
-
-def test_warn_missing_metadata():
-    class Foo(object):
-        x = MetaData('x', 'test description')
-
-    class Bar(object):
-        y = MetaData('y', 'test', strict=True)
-
-    with patch('warnings.warn') as mock:
-        _warn_missing_metadata(Foo, {'x': 3})
-    assert mock.call_count == 0
-
-    with patch('warnings.warn') as mock:
-        _warn_missing_metadata(Foo, {})
-    assert mock.call_count == 1
-
-    with patch('warnings.warn') as mock:
-        _warn_missing_metadata(Foo, {}, verbose=False)
-    assert mock.call_count == 0
-
-    with pytest.raises(RuntimeError):
-        _warn_missing_metadata(Bar, {})
-
-
-def test_dendrogram_ppv_catalog():
-    x = np.random.random((5, 5, 5))
-    d = Dendrogram.compute(x)
-    c = ppv_catalog(d, {})
-    for ct, st in zip(c['flux'], d):
-        assert ct == st.values.sum()
-
-
-def test_dendrogram_ppv_catalog():
-    x = np.random.random((5, 5))
-    d = Dendrogram.compute(x)
-    c = pp_catalog(d, {})
-    for ct, st in zip(c['flux'], d):
-        assert ct == st.values.sum()

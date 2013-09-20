@@ -1,33 +1,16 @@
-# Computing Astronomical Dendrograms
-# Copyright (c) 2011-2012 Thomas P. Robitaille and Braden MacDonald
-#
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in
-# all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-# DEALINGS IN THE SOFTWARE.
+# Licensed under an MIT open source license - see LICENSE
 
 " Test import and export of dendrograms "
 
 import os
 
+import pytest
 import numpy as np
 
 from .. import Dendrogram
 from ..structure import Structure
 from .test_index import assert_permuted_fancyindex
+
 
 class TestIO(object):
 
@@ -53,24 +36,77 @@ class TestIO(object):
 
     def compare_dendrograms(self, d1, d2):
         " Helper method that ensures d1 and d2 are equivalent "
-        # Do we get the same number of nodes?
-        assert len(d1.nodes_dict) == len(d2.nodes_dict)
+        # Do we get the same number of structures?
+        assert len(d1) == len(d2)
         # Do we recover the data exactly?
         np.testing.assert_array_equal(d1.data, d2.data)
-        # Now check that the nodes are the same:
-        for idx in d2.nodes_dict:
-            node1, node2 = d1.nodes_dict[idx], d2.nodes_dict[idx]
-            assert_permuted_fancyindex(node1.indices, node2.indices)
-            assert np.all(np.sort(node1.values) == np.sort(node2.values))
-            assert type(node1) == type(node2)
+        # Now check that the structures are the same:
+        for s in d2:
+            idx = s.idx
+            structure1, structure2 = d1[idx], d2[idx]
+            assert_permuted_fancyindex(structure1.indices(subtree=False),
+                                       structure2.indices(subtree=False))
+            assert np.all(np.sort(structure1.values(subtree=False)) ==
+                          np.sort(structure2.values(subtree=False)))
+            assert isinstance(structure1, type(structure2))
             # Compare the coordinates and data values of all peak pixels:
-            assert node1.get_peak(subtree=True) == node2.get_peak(subtree=True)
+            assert structure1.get_peak(subtree=True) == \
+                structure2.get_peak(subtree=True)
+
+            assert structure2._tree_index is not None
 
     # Below are the actual tests for each import/export format:
 
     def test_hdf5(self):
         self.test_filename = 'astrodendro-test.hdf5'
         d1 = Dendrogram.compute(self.data, verbose=False)
-        d1.save_to(self.test_filename)
-        d2 = Dendrogram.load_from(self.test_filename)
+        d1.save_to(self.test_filename, format='hdf5')
+        d2 = Dendrogram.load_from(self.test_filename, format='hdf5')
         self.compare_dendrograms(d1, d2)
+
+    def test_fits(self):
+        self.test_filename = 'astrodendro-test.fits'
+        d1 = Dendrogram.compute(self.data, verbose=False)
+        d1.save_to(self.test_filename, format='hdf5')
+        d2 = Dendrogram.load_from(self.test_filename, format='hdf5')
+        self.compare_dendrograms(d1, d2)
+
+    def test_hdf5_auto(self):
+
+        d1 = Dendrogram.compute(self.data, verbose=False)
+
+        # recognize from extension
+        d1.save_to('astrodendro-test.hdf5')
+
+        # no way to tell
+        with pytest.raises(IOError):
+            d1.save_to('astrodendro-test')
+
+        # no way to tell, so have to explicitly give format
+        d1.save_to('astrodendro-test', format='hdf5')
+
+        # recognize from extension
+        d2 = Dendrogram.load_from('astrodendro-test.hdf5')
+
+        # recognize from signature
+        d2 = Dendrogram.load_from('astrodendro-test')
+
+    def test_fits_auto(self):
+
+        d1 = Dendrogram.compute(self.data, verbose=False)
+
+        # recognize from extension
+        d1.save_to('astrodendro-test.fits')
+
+        # no way to tell
+        with pytest.raises(IOError):
+            d1.save_to('astrodendro-test')
+
+        # no way to tell, so have to explicitly give format
+        d1.save_to('astrodendro-test', format='fits')
+
+        # recognize from extension
+        d2 = Dendrogram.load_from('astrodendro-test.fits')
+
+        # recognize from signature
+        d2 = Dendrogram.load_from('astrodendro-test')

@@ -1,38 +1,56 @@
-# Computing Astronomical Dendrograms
-# Copyright (c) 2011-2012 Thomas P. Robitaille and Braden MacDonald
-#
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in
-# all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-# DEALINGS IN THE SOFTWARE.
+# Licensed under an MIT open source license - see LICENSE
+
+import os
 
 import numpy as np
 
+from .util import parse_dendrogram
+from .handler import IOHandler
+
 # Import and export
+
+# FITS file signature as per RFC 4047
+FITS_SIGNATURE = (b"\x53\x49\x4d\x50\x4c\x45\x20\x20\x3d\x20\x20\x20\x20\x20"
+                  b"\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20"
+                  b"\x20\x54")
+
+
+def is_fits(filename, mode='r'):
+    if mode == 'r' and os.path.exists(filename):
+        fileobj = open(filename, 'rb')
+        sig = fileobj.read(30)
+        return sig == FITS_SIGNATURE
+    elif filename.lower().endswith(('.fits', '.fits.gz', '.fit', '.fit.gz')):
+        return True
+    else:
+        return False
 
 
 def dendro_export_fits(d, filename):
     """Export the dendrogram 'd' to the FITS file 'filename'"""
-    import pyfits
-    raise NotImplementedError("FITS export has not yet been implemented.")
+    from astropy.io import fits
+
+    hdus = [fits.PrimaryHDU(),
+            fits.ImageHDU(d.data),
+            fits.ImageHDU(d.index_map),
+            fits.ImageHDU(np.array([ord(x) for x in  d.to_newick()]))]
+    hdulist = fits.HDUList(hdus)
+
+    hdulist.writeto(filename, clobber=True)
 
 
 def dendro_import_fits(filename):
     """Import 'filename' and construct a dendrogram from it"""
-    import pyfits
-    from ..dendrogram import Dendrogram
-    from ..structure import Structure
-    raise NotImplementedError("FITS import has not yet been implemented.")
+    from astropy.io import fits
+
+    with fits.open(filename) as hdus:
+        data = hdus[1].data
+        index_map = hdus[2].data
+        newick = ''.join(chr(x) for x in hdus[3].data.flat)
+
+    return parse_dendrogram(newick, data, index_map)
+
+
+FITSHandler = IOHandler(identify=is_fits,
+                        export_dendro=dendro_export_fits,
+                        import_dendro=dendro_import_fits)

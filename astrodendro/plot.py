@@ -1,3 +1,5 @@
+# Licensed under an MIT open source license - see LICENSE
+
 import numpy as np
 
 
@@ -13,19 +15,40 @@ class DendrogramPlotter(object):
         self._cached_positions = None
         self.sort()
 
-    def sort(self, sort_key=lambda s: s.get_peak(subtree=True)[1], reverse=False):
+    def set_custom_positions(self, custom_position):
         """
-        Sort the position of the leaves for plotting
+        Manually set the positon on the structures for plotting
+
+        Parameters
+        ----------
+        custom_position : function
+            This should be a function that takes a
+            `~astrodendro.structure.Structure`returns the position of the
+            leaves to use for plotting. If the dataset has more than one
+            dimension, using this may cause lines to cross. If this is used,
+            then ``sort_key`` and ``reverse`` are ignored.
+        """
+        self._cached_positions = {}
+        for structure in self.dendrogram.all_structures:
+            self._cached_positions[structure] = custom_position(structure)
+
+    def sort(self, sort_key=None, reverse=False):
+        """
+        Sort the position of the leaves for plotting.
 
         Parameters
         ----------
         sort_key : function, optional
              This should be a function that takes a
              `~astrodendro.structure.Structure` and returns a scalar that is
-             then used to sort the leaves.
+             then used to sort the leaves. If not specified, the leaves are
+             sorted according to their peak value.
         reverse : bool, optional
              Whether to reverse the sorting
         """
+
+        if sort_key is None:
+            sort_key = lambda s: s.get_peak(subtree=True)[1]
 
         sorted_trunk_structures = sorted(self.dendrogram.trunk, key=sort_key, reverse=reverse)
 
@@ -54,7 +77,7 @@ class DendrogramPlotter(object):
 
     def plot_tree(self, ax, structure=None, subtree=True, autoscale=True, **kwargs):
         """
-        Plot the dendrogram tree or a substructure
+        Plot the dendrogram tree or a substructure.
 
         Parameters
         ----------
@@ -89,7 +112,7 @@ class DendrogramPlotter(object):
 
     def plot_contour(self, ax, structure=None, subtree=True, slice=None, **kwargs):
         """
-        Plot a contour outlining all pixels in the dendrogram, or a specific
+        Plot a contour outlining all pixels in the dendrogram, or a specific.
         structure.
 
         Parameters
@@ -118,10 +141,10 @@ class DendrogramPlotter(object):
             raise ValueError("plot_data can only be used with 2- or 3-dimensional data")
 
         if structure is None:
-            mask = self.dendrogram.data > self.dendrogram.min_value
+            mask = self.dendrogram.data > self.dendrogram.params['min_value']
         else:
             if type(structure) is int:
-                structure = self.dendrogram.nodes_dict[structure]
+                structure = self.dendrogram[structure]
             mask = structure.get_mask(self.dendrogram.data.shape, subtree=subtree)
             if self.dendrogram.data.ndim == 3:
                 if slice is None:
@@ -137,7 +160,7 @@ class DendrogramPlotter(object):
 
     def get_lines(self, structure=None, **kwargs):
         """
-        Get a collection of lines to draw the dendrogram
+        Get a collection of lines to draw the dendrogram.
 
         Parameters
         ----------
@@ -159,10 +182,10 @@ class DendrogramPlotter(object):
             raise Exception("Leaves have not yet been sorted")
 
         if structure is None:
-            structures = self.dendrogram.all_nodes
+            structures = list(self.dendrogram.all_structures)
         else:
             if type(structure) is int:
-                structure = self.dendrogram.nodes_dict[structure]
+                structure = self.dendrogram[structure]
             structures = structure.descendants + [structure]
 
         lines = []
